@@ -1,0 +1,19 @@
+# Requirements
+## Special Emphasis
+1. Before executing scripts through the terminal, you must close the PowerShell terminal
+2. After executing commands or entering instructions, you must check the current terminal information before proceeding to the next step
+
+## Steps for Using PowerShell Tools to Execute Script Commands
+- Step 1: Must call the *close PowerShell* tool close_powershell to close all PowerShell processes
+- Step 2: Open a new PowerShell window by calling the *open PowerShell* tool open_powershell
+- Step 3: Input commands to the PowerShell window by calling the *run PowerShell script* tool run_powershell_script
+- Step 4: Check PowerShell process status by calling the *get PowerShell processes* tool get_powershell_processes
+
+## PowerShell Interaction Standards
+If you find scenarios that require PowerShell interaction, please use the run_powershell_script tool to send commands to the PowerShell window. The tool will automatically handle:
+- Command input and execution
+- Window activation
+- Process management
+
+# Vue Project Creation Standards
+1. Use the `vue create` command to create a vue project
