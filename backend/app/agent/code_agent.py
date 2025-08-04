@@ -1,8 +1,9 @@
 import os
 import asyncio
 import time
+import uuid
 from langchain_core.runnables import RunnableConfig
-from langchain_core.messages import AIMessage, ToolMessage, SystemMessage
+from langchain_core.messages import AIMessage, ToolMessage, SystemMessage, HumanMessage
 from langgraph.prebuilt import create_react_agent
 from app.model.qwen import llm_deepseek
 from app.tools.file_tools import file_tools
@@ -25,7 +26,10 @@ def format_debug_output(step_name: str, content: str, is_tool_call=False) -> Non
         print(content)
         print("="*40)
 
-async def agent_respond(user_message: str):
+async def agent_respond(user_message: str, thread_id: str = None):
+    if thread_id is None:
+        thread_id = str(uuid.uuid4())
+    
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     async with AsyncRedisSaver.from_conn_string(redis_url) as memory:
         shell_tools = await get_stdio_shell_tools()
@@ -43,9 +47,9 @@ You are an excellent engineer, your name is {name}""")
             prompt=SystemMessage(content=prompt.format(name="Bot")),
         )
         
-        config = RunnableConfig(configurable={"thread_id": 2}, recursion_limit=100)
+        config = RunnableConfig(configurable={"thread_id": thread_id}, recursion_limit=100)
         
-        print("\n🤖 agent start thinking...")
+        print(f"\n🤖 agent start thinking... (thread_id: {thread_id})")
         print("="*60)
 
         iteration_count = 0
@@ -64,9 +68,12 @@ When you need to use tools:
 
 # User Question
 {user_message}"""
+        messages = [
+        HumanMessage(content=user_prompt)
+        ]
         
         try:
-            async for chunk in agent.astream(input={"messages": user_prompt}, config=config):
+            async for chunk in agent.astream(input={"messages": messages}, config=config):
                 iteration_count += 1
 
                 print(f"iteration {iteration_count}: {chunk}")
@@ -105,13 +112,16 @@ When you need to use tools:
 
 
 async def run_agent():
+    thread_id = str(uuid.uuid4())
+    print(f"Starting new session with thread_id: {thread_id}")
+    
     while True:
         user_input = input("User: ")
         
         if user_input.lower() == "exit":
             break
             
-        async for chunk in agent_respond(user_input):
+        async for chunk in agent_respond(user_input, thread_id):
             pass  # Just consume the chunks for CLI mode
 
 

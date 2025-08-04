@@ -2,6 +2,7 @@ import asyncio
 import json
 import time
 import os
+import uuid
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,14 +20,15 @@ router = APIRouter(prefix="/api", tags=["Chat API"])
 class ChatRequest(BaseModel):
     message: str
     kb_id: str = None  # Optional, select knowledge base ID
+    thread_id: str = None
 
 class ChatResponse(BaseModel):
     message: str
     kb_id: str = None
     kb_name: str = None
 
-async def stream_agent_response(user_message: str, kb_id: str = None):
-    async for chunk in agent_respond(user_message):
+async def stream_agent_response(user_message: str, kb_id: str = None, thread_id: str = None):
+    async for chunk in agent_respond(user_message, thread_id):
         for node_name, node_output in chunk.items():
             if "messages" in node_output:
                 for msg in node_output["messages"]:
@@ -42,9 +44,13 @@ async def stream_agent_response(user_message: str, kb_id: str = None):
 async def chat_endpoint(chat: ChatRequest):
     user_message = chat.message
     kb_id = chat.kb_id
+    thread_id = chat.thread_id
     
     if not user_message:
         return {"error": "Message cannot be empty"}
+    
+    if thread_id is None:
+        thread_id = str(uuid.uuid4())
     
     async def generate():
         try:
@@ -58,7 +64,7 @@ async def chat_endpoint(chat: ChatRequest):
             else:
                 enhanced_message = user_message
             
-            async for chunk in stream_agent_response(enhanced_message, kb_id):
+            async for chunk in stream_agent_response(enhanced_message, kb_id, thread_id):
                 yield chunk
             yield "data: [DONE]\n\n"
         except Exception as e:
@@ -94,7 +100,3 @@ async def get_available_knowledge_bases():
         }
     except Exception as e:
         return {"error": f"Failed to get knowledge bases list: {str(e)}"}
-
-@router.get("/health")
-async def chat_health_check():
-    return {"status": "healthy", "message": "AI Agent API is running"} 
