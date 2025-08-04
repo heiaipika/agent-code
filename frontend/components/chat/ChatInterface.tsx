@@ -1,33 +1,26 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Send, Menu, User, Bot, Loader2 } from 'lucide-react';
+import { Send, Menu, User, Bot, Loader2, Plus } from 'lucide-react';
 import { streamChat, ChatResponse } from '@/app/api/chat_api';
+import { useChatContext, Message } from '@/lib/contexts/ChatContext';
 
 interface ChatInterfaceProps {
   onToggleLeftSidebar: () => void;
 }
 
-interface Message {
-  id: string;
-  content: string;
-  role: 'user' | 'assistant';
-  timestamp: Date;
-  isLoading?: boolean;
-}
-
 export default function ChatInterface({ onToggleLeftSidebar }: ChatInterfaceProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      content: '你好！我是你的 AI 助手，有什么可以帮助你的吗？',
-      role: 'assistant',
-      timestamp: new Date(),
-    }
-  ]);
+  const {
+    currentConversation,
+    selectedKbId,
+    addMessage,
+    updateMessage,
+    createNewConversation,
+  } = useChatContext();
+
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [threadId, setThreadId] = useState<string | undefined>(undefined);
+  const [assistantMessageContent, setAssistantMessageContent] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -37,24 +30,16 @@ export default function ChatInterface({ onToggleLeftSidebar }: ChatInterfaceProp
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [currentConversation?.messages]);
 
-  const startNewConversation = () => {
-    setMessages([
-      {
-        id: '1',
-        content: 'hello, I am your AI assistant, how can I help you?',
-        role: 'assistant',
-        timestamp: new Date(),
-      }
-    ]);
-    setThreadId(undefined); // 重置thread_id，让后端生成新的
-    setInputValue('');
-    setIsLoading(false);
-  };
+  useEffect(() => {
+    if (!currentConversation) {
+      createNewConversation();
+    }
+  }, [currentConversation, createNewConversation]);
 
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || isLoading) return;
+    if (!inputValue.trim() || isLoading || !currentConversation) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -71,52 +56,54 @@ export default function ChatInterface({ onToggleLeftSidebar }: ChatInterfaceProp
       isLoading: true,
     };
 
-    setMessages(prev => [...prev, userMessage, assistantMessage]);
+    console.log('Sending message:', {
+      content: userMessage.content,
+      threadId: currentConversation.threadId,
+      selectedKbId,
+      conversationId: currentConversation.id
+    });
+
+    addMessage(currentConversation.id, userMessage);
+    addMessage(currentConversation.id, assistantMessage);
+    
     setInputValue('');
     setIsLoading(true);
+    setAssistantMessageContent(''); 
 
     try {
-      // 调用真实的 API，传递当前的thread_id
       await streamChat(
         userMessage.content,
         (chunk: ChatResponse) => {
-          setMessages(prev => 
-            prev.map(msg => {
-              if (msg.id === assistantMessage.id) {
-                if (chunk.type === 'thinking') {
-                  return { ...msg, content: chunk.content, isLoading: false };
-                } else if (chunk.type === 'tool_result') {
-                  return { ...msg, content: msg.content + '\n\n' + chunk.content, isLoading: false };
-                } else if (chunk.type === 'kb_info') {
-                  return { ...msg, content: msg.content + '\n\n' + chunk.content, isLoading: false };
-                }
-              }
-              return msg;
-            })
-          );
+          console.log('Received chunk:', chunk);
+          let newContent = assistantMessageContent;
+          if (chunk.type === 'thinking') {
+            newContent = chunk.content;
+          } else if (chunk.type === 'tool_result' || chunk.type === 'kb_info') {
+            newContent = assistantMessageContent + '\n\n' + chunk.content;
+          }
+          
+          setAssistantMessageContent(newContent);
+          updateMessage(currentConversation.id, assistantMessage.id, {
+            content: newContent,
+            isLoading: false
+          });
         },
-        undefined, // kb_id 暂时不传
-        threadId, // 传递当前的thread_id
+        selectedKbId, 
+        currentConversation.threadId, 
         (error: string) => {
           console.error('API Error:', error);
-          setMessages(prev => 
-            prev.map(msg => 
-              msg.id === assistantMessage.id 
-                ? { ...msg, content: `抱歉，发生了错误：${error}`, isLoading: false }
-                : msg
-            )
-          );
+          updateMessage(currentConversation.id, assistantMessage.id, {
+            content: `Sorry, an error occurred: ${error}`,
+            isLoading: false
+          });
         }
       );
     } catch (error) {
       console.error('Chat error:', error);
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === assistantMessage.id 
-            ? { ...msg, content: '抱歉，连接服务器时发生错误，请检查网络连接或稍后重试。', isLoading: false }
-            : msg
-        )
-      );
+      updateMessage(currentConversation.id, assistantMessage.id, {
+        content: 'Sorry, an error occurred while connecting to the server. Please check your network connection or try again later.',
+        isLoading: false
+      });
     } finally {
       setIsLoading(false);
     }
@@ -129,9 +116,19 @@ export default function ChatInterface({ onToggleLeftSidebar }: ChatInterfaceProp
     }
   };
 
+  if (!currentConversation) {
+    return (
+      <div className="flex flex-col h-full bg-white dark:bg-gray-900">
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-900">
-      {/* 头部工具栏 */}
+      {/* Header toolbar */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <div className="flex items-center gap-2">
           <button
@@ -140,19 +137,27 @@ export default function ChatInterface({ onToggleLeftSidebar }: ChatInterfaceProp
           >
             <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
           </button>
-          <h1 className="text-lg font-semibold text-gray-900 dark:text-white">AI 助手</h1>
+          <h1 className="text-lg font-semibold text-gray-900 dark:text-white">AI Assistant</h1>
         </div>
-        <button
-          onClick={startNewConversation}
-          className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-        >
-          New chat
-        </button>
+        <div className="flex items-center gap-2">
+          {selectedKbId && (
+            <div className="px-2 py-1 text-xs bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300 rounded">
+              Knowledge base enabled
+            </div>
+          )}
+          <button
+            onClick={createNewConversation}
+            className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1"
+          >
+            <Plus className="w-3 h-3" />
+            New chat
+          </button>
+        </div>
       </div>
 
-      {/* 消息列表 */}
+      {/* Message list */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message) => (
+        {currentConversation.messages.map((message) => (
           <div
             key={message.id}
             className={`flex gap-3 ${
@@ -175,7 +180,7 @@ export default function ChatInterface({ onToggleLeftSidebar }: ChatInterfaceProp
               {message.isLoading ? (
                 <div className="flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm">正在思考...</span>
+                  <span className="text-sm">Thinking...</span>
                 </div>
               ) : (
                 <p className="text-sm whitespace-pre-wrap">{message.content}</p>
@@ -192,7 +197,7 @@ export default function ChatInterface({ onToggleLeftSidebar }: ChatInterfaceProp
         <div ref={messagesEndRef} />
       </div>
 
-      {/* 输入区域 */}
+      {/* Input area */}
       <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <div className="flex gap-2">
           <textarea
@@ -200,7 +205,7 @@ export default function ChatInterface({ onToggleLeftSidebar }: ChatInterfaceProp
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="输入你的问题..."
+            placeholder="Enter your question..."
             className="flex-1 resize-none rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
             rows={1}
             disabled={isLoading}

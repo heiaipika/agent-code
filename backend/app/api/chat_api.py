@@ -33,12 +33,12 @@ async def stream_agent_response(user_message: str, kb_id: str = None, thread_id:
             if "messages" in node_output:
                 for msg in node_output["messages"]:
                     if isinstance(msg, AIMessage) and msg.content:
-                        yield f"data: {{\"content\": {json.dumps(msg.content, ensure_ascii=False)}, \"type\": \"thinking\"}}\n\n"
+                        yield f"data: {{\"content\": {json.dumps(msg.content, ensure_ascii=False)}, \"type\": \"thinking\"}}\n"
                     elif isinstance(msg, ToolMessage):
                         tool_name = getattr(msg, "name", "unknown")
                         tool_content = msg.content
                         tool_result = f"🔍 Tool: {tool_name}\n🤖 Result: {tool_content}"
-                        yield f"data: {{\"content\": {json.dumps(tool_result, ensure_ascii=False)}, \"type\": \"tool_result\"}}\n\n"
+                        yield f"data: {{\"content\": {json.dumps(tool_result, ensure_ascii=False)}, \"type\": \"tool_result\"}}\n"
 
 @router.post("/chat")
 async def chat_endpoint(chat: ChatRequest):
@@ -57,7 +57,7 @@ async def chat_endpoint(chat: ChatRequest):
             if kb_id:
                 kb = kb_manager.get_knowledge_base(kb_id)
                 if kb:
-                    yield f"data: {{\"content\": {json.dumps(f'Available knowledge base: {kb.name}', ensure_ascii=False)}, \"type\": \"kb_info\"}}\n\n"
+                    yield f"data: {{\"content\": {json.dumps(f'Available knowledge base: {kb.name}', ensure_ascii=False)}, \"type\": \"kb_info\"}}\n"
                     enhanced_message = f"{user_message}\n\nnote: current has available knowledge base '{kb.name}', if there is no related information in the chat history, you can consider using the knowledge base to query."
                 else:
                     enhanced_message = user_message
@@ -66,11 +66,11 @@ async def chat_endpoint(chat: ChatRequest):
             
             async for chunk in stream_agent_response(enhanced_message, kb_id, thread_id):
                 yield chunk
-            yield "data: [DONE]\n\n"
+            yield "data: [DONE]\n"
         except Exception as e:
             import traceback
             tb = traceback.format_exc()
-            error_msg = f"data: {{\"error\": {json.dumps(str(e))}, \"trace\": {json.dumps(tb)} }}\n\n"
+            error_msg = f"data: {{\"error\": {json.dumps(str(e))}, \"trace\": {json.dumps(tb)} }}\n"
             yield error_msg
     return StreamingResponse(
         generate(),
