@@ -21,6 +21,7 @@ export default function ChatInterface({ onToggleLeftSidebar }: ChatInterfaceProp
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [assistantMessageContent, setAssistantMessageContent] = useState('');
+  const [currentAssistantMessageId, setCurrentAssistantMessageId] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -37,6 +38,15 @@ export default function ChatInterface({ onToggleLeftSidebar }: ChatInterfaceProp
       createNewConversation();
     }
   }, [currentConversation, createNewConversation]);
+
+  useEffect(() => {
+    if (currentAssistantMessageId && assistantMessageContent !== '') {
+      updateMessage(currentConversation?.id || '', currentAssistantMessageId, {
+        content: assistantMessageContent,
+        isLoading: false
+      });
+    }
+  }, [assistantMessageContent, currentAssistantMessageId, currentConversation?.id]);
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading || !currentConversation) return;
@@ -69,41 +79,40 @@ export default function ChatInterface({ onToggleLeftSidebar }: ChatInterfaceProp
     setInputValue('');
     setIsLoading(true);
     setAssistantMessageContent(''); 
+    setCurrentAssistantMessageId(assistantMessage.id);
 
     try {
       await streamChat(
         userMessage.content,
         (chunk: ChatResponse) => {
           console.log('Received chunk:', chunk);
-          let newContent = assistantMessageContent;
-          if (chunk.type === 'thinking') {
-            newContent = chunk.content;
-          } else if (chunk.type === 'tool_result' || chunk.type === 'kb_info') {
-            newContent = assistantMessageContent + '\n\n' + chunk.content;
-          }
+          console.log('Chunk type:', chunk.type);
+          console.log('Chunk content:', chunk.content);
           
-          setAssistantMessageContent(newContent);
-          updateMessage(currentConversation.id, assistantMessage.id, {
-            content: newContent,
-            isLoading: false
+          setAssistantMessageContent(prevContent => {
+            let newContent = prevContent;
+            console.log('Previous content:', prevContent);
+            
+            if (chunk.type === 'thinking') {
+              newContent = prevContent + (prevContent ? '\n\n' : '') + chunk.content;
+            } else if (chunk.type === 'tool_result' || chunk.type === 'kb_info') {
+              newContent = prevContent + (prevContent ? '\n\n' : '') + chunk.content;
+            }
+            
+            console.log('New content:', newContent);
+            return newContent;
           });
         },
         selectedKbId, 
         currentConversation.threadId, 
         (error: string) => {
           console.error('API Error:', error);
-          updateMessage(currentConversation.id, assistantMessage.id, {
-            content: `Sorry, an error occurred: ${error}`,
-            isLoading: false
-          });
+          setAssistantMessageContent(`Sorry, an error occurred: ${error}`);
         }
       );
     } catch (error) {
       console.error('Chat error:', error);
-      updateMessage(currentConversation.id, assistantMessage.id, {
-        content: 'Sorry, an error occurred while connecting to the server. Please check your network connection or try again later.',
-        isLoading: false
-      });
+      setAssistantMessageContent('Sorry, an error occurred while connecting to the server. Please check your network connection or try again later.');
     } finally {
       setIsLoading(false);
     }

@@ -10,6 +10,7 @@ from pydantic import BaseModel
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from app.rag.knowledge_manager import kb_manager, KnowledgeBase
+from app.mcp.rag_tools import rag_manager
 
 # Create router instead of FastAPI app
 router = APIRouter(prefix="/rag", tags=["RAG System"])
@@ -106,16 +107,32 @@ async def upload_file(
             else:
                 kb = active_kbs[0]
         
-        # Use Agent's RAG tools to upload file
-        # This should be handled through Agent's RAG tools, temporarily return success info
-        return UploadResponse(
-            message="File uploaded successfully (please process through Agent's RAG tools)",
-            file_path=str(file_path),
-            kb_id=kb.id,
-            kb_name=kb.name,
-            chunks_count=0,
-            collection_info={"status": "pending"}
-        )
+        # Process file through RAG manager
+        try:
+            result = rag_manager.upload_to_knowledge_base(kb.id, str(file_path))
+            
+            if result["success"]:
+                return UploadResponse(
+                    message="File uploaded and processed successfully",
+                    file_path=str(file_path),
+                    kb_id=kb.id,
+                    kb_name=kb.name,
+                    chunks_count=result["chunks_count"],
+                    collection_info=result["collection_info"]
+                )
+            else:
+                raise HTTPException(status_code=500, detail=f"File processing failed: {result['error']}")
+                
+        except Exception as e:
+            # If RAG processing fails, still return success for file upload
+            return UploadResponse(
+                message=f"File uploaded successfully but processing failed: {str(e)}",
+                file_path=str(file_path),
+                kb_id=kb.id,
+                kb_name=kb.name,
+                chunks_count=0,
+                collection_info={"status": "error", "error": str(e)}
+            )
         
     except HTTPException:
         raise
@@ -140,15 +157,23 @@ async def query_rag(request: QueryRequest):
                 raise HTTPException(status_code=404, detail="No available knowledge bases")
             kb = active_kbs[0]
         
-        # Use Agent's RAG tools to query
-        # This should be handled through Agent's RAG tools, temporarily return empty results
-        return QueryResponse(
-            kb_id=kb.id,
-            kb_name=kb.name,
-            query=request.query,
-            results=[],
-            total_documents=0
-        )
+        # Query through RAG manager
+        try:
+            result = rag_manager.query_knowledge_base(kb.id, request.query, k=request.k)
+            
+            if result["success"]:
+                return QueryResponse(
+                    kb_id=kb.id,
+                    kb_name=kb.name,
+                    query=request.query,
+                    results=result["results"],
+                    total_documents=result["total_documents"]
+                )
+            else:
+                raise HTTPException(status_code=500, detail=f"Query failed: {result['error']}")
+                
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Query processing failed: {str(e)}")
         
     except HTTPException:
         raise
@@ -161,8 +186,20 @@ async def list_knowledge_bases():
     List all knowledge bases
     """
     try:
-        knowledge_bases = kb_manager.list_knowledge_bases()
-        return [KnowledgeBaseResponse(**kb.model_dump()) for kb in knowledge_bases]
+        knowledge_bases = kb_manager.get_active_knowledge_bases()
+        return [
+            KnowledgeBaseResponse(
+                id=kb.id,
+                name=kb.name,
+                description=kb.description,
+                file_count=kb.file_count,
+                vector_count=kb.vector_count,
+                created_at=kb.created_at,
+                updated_at=kb.updated_at,
+                status="active"
+            ) 
+            for kb in knowledge_bases
+        ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get knowledge bases list: {str(e)}")
 

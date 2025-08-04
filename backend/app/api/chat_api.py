@@ -32,8 +32,13 @@ async def stream_agent_response(user_message: str, kb_id: str = None, thread_id:
         for node_name, node_output in chunk.items():
             if "messages" in node_output:
                 for msg in node_output["messages"]:
-                    if isinstance(msg, AIMessage) and msg.content:
-                        yield f"data: {{\"content\": {json.dumps(msg.content, ensure_ascii=False)}, \"type\": \"thinking\"}}\n"
+                    if isinstance(msg, AIMessage):
+                        if msg.content:
+                            yield f"data: {{\"content\": {json.dumps(msg.content, ensure_ascii=False)}, \"type\": \"thinking\"}}\n"
+                        elif hasattr(msg, 'tool_calls') and msg.tool_calls:
+                            for tool in msg.tool_calls:
+                                tool_info = f"🔍 Using tool: {tool['name']}"
+                                yield f"data: {{\"content\": {json.dumps(tool_info, ensure_ascii=False)}, \"type\": \"tool_result\"}}\n"
                     elif isinstance(msg, ToolMessage):
                         tool_name = getattr(msg, "name", "unknown")
                         tool_content = msg.content
@@ -80,23 +85,3 @@ async def chat_endpoint(chat: ChatRequest):
             "Connection": "keep-alive",
         }
     )
-
-@router.get("/knowledge-bases")
-async def get_available_knowledge_bases():
-    """Get available knowledge bases list"""
-    try:
-        knowledge_bases = kb_manager.get_active_knowledge_bases()
-        return {
-            "knowledge_bases": [
-                {
-                    "id": kb.id,
-                    "name": kb.name,
-                    "description": kb.description,
-                    "file_count": kb.file_count,
-                    "vector_count": kb.vector_count
-                }
-                for kb in knowledge_bases
-            ]
-        }
-    except Exception as e:
-        return {"error": f"Failed to get knowledge bases list: {str(e)}"}

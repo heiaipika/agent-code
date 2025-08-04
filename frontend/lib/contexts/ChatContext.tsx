@@ -1,7 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { KnowledgeBase } from '@/app/api/chat_api';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { KnowledgeBase } from '@/app/api/knowledge_base_api';
 
 export interface Conversation {
   id: string;
@@ -93,9 +93,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const loadKnowledgeBases = async () => {
     try {
       setLoadingKb(true);
-      const { getKnowledgeBases } = await import('@/app/api/chat_api');
-      const response = await getKnowledgeBases();
-      setKnowledgeBases(response.knowledge_bases);
+      const { getKnowledgeBases } = await import('@/app/api/knowledge_base_api');
+      const knowledgeBases = await getKnowledgeBases();
+      setKnowledgeBases(knowledgeBases);
     } catch (error) {
       console.error('Failed to load knowledge bases:', error);
     } finally {
@@ -175,7 +175,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
   };
 
-  const updateMessage = (conversationId: string, messageId: string, updates: Partial<Message>) => {
+  const updateMessage = useCallback((conversationId: string, messageId: string, updates: Partial<Message>) => {
     setConversations(prev => prev.map(conv => {
       if (conv.id === conversationId) {
         return {
@@ -201,7 +201,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         };
       });
     }
-  };
+  }, [currentConversation]);
 
   const deleteConversation = (id: string) => {
     setConversations(prev => prev.filter(conv => conv.id !== id));
