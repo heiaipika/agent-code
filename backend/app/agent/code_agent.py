@@ -8,6 +8,7 @@ from app.model.qwen import llm_deepseek
 from app.tools.file_tools import file_tools
 from app.tools.shell_tools import get_stdio_shell_tools
 from app.tools.powershell_tools import get_stdio_powershell_tools
+from app.tools.rag_tools import get_stdio_rag_tools
 from langgraph.checkpoint.redis import AsyncRedisSaver
 from langchain_core.prompts import PromptTemplate
 
@@ -29,8 +30,9 @@ async def agent_respond(user_message: str):
     async with AsyncRedisSaver.from_conn_string(redis_url) as memory:
         shell_tools = await get_stdio_shell_tools()
         powershell_tools = await get_stdio_powershell_tools()
+        rag_tools = await get_stdio_rag_tools()
         
-        tools = file_tools + shell_tools + powershell_tools
+        tools = file_tools + shell_tools + powershell_tools + rag_tools
         prompt = PromptTemplate.from_template(template="""# Role
 You are an excellent engineer, your name is {name}""")
         agent = create_react_agent(
@@ -52,13 +54,17 @@ You are an excellent engineer, your name is {name}""")
 
         user_prompt = \
 f"""# Requirements
-Before executing the task, first use the query_rag tool to query the knowledge base, and execute the task based on the knowledge in the knowledge base
+You should first try to answer based on the chat history. If you cannot answer the question based on the chat history, then use the appropriate tools to help you complete the task.
+
+When you need to use tools:
+1. If the question is about knowledge or information, first use query_rag tool to search the knowledge base
+2. If you need to perform file operations, use file_tools
+3. If you need to execute shell commands, use shell_tools
+4. If you need to execute PowerShell commands, use powershell_tools
 
 # User Question
 {user_message}"""
         
-        # Create a vue2 project named vue2-test in the current directory's frontend folder
-
         try:
             async for chunk in agent.astream(input={"messages": user_prompt}, config=config):
                 iteration_count += 1
